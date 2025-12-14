@@ -24,6 +24,13 @@ Take complete control over unwanted messages with a dedicated spam folder:
 3. Blocked numbers/keywords automatically trigger spam detection
 4. Review and permanently delete or restore as needed
 
+### ♻️ **RECYCLE BIN FOR CONVERSATIONS**
+Avoid accidental data loss with full Recycle Bin support:
+- **Conversation Recovery:** Deleting a conversation now moves it to the Recycle Bin instead of permanently deleting it
+- **Full Restoration:** Restore entire conversations including all messages and media
+- **Auto-Cleanup:** (Optional) Configure automatic deletion of old recycled items
+- **Safe Delete:** Gives you a second chance if you delete the wrong thread
+
 ---
 
 ## 📱 Original Fossify Messages Features
