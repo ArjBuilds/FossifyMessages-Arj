@@ -1,0 +1,100 @@
+package org.fossify.messages.arj.receivers
+
+import android.content.Context
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import com.bumptech.glide.Glide
+import com.klinker.android.send_message.MmsReceivedReceiver
+import org.fossify.commons.extensions.baseConfig
+import org.fossify.commons.extensions.getMyContactsCursor
+import org.fossify.commons.extensions.isNumberBlocked
+import org.fossify.commons.extensions.normalizePhoneNumber
+import org.fossify.commons.extensions.showErrorToast
+import org.fossify.commons.helpers.SimpleContactsHelper
+import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.messages.arj.R
+import org.fossify.messages.arj.extensions.getConversations
+import org.fossify.messages.arj.extensions.getLatestMMS
+import org.fossify.messages.arj.extensions.insertOrUpdateConversation
+import org.fossify.messages.arj.extensions.shouldUnarchive
+import org.fossify.messages.arj.extensions.showReceivedMessageNotification
+import org.fossify.messages.arj.extensions.updateConversationArchivedStatus
+import org.fossify.messages.arj.helpers.ReceiverUtils.isMessageFilteredOut
+import org.fossify.messages.arj.helpers.refreshConversations
+import org.fossify.messages.arj.helpers.refreshMessages
+import org.fossify.messages.arj.models.Message
+
+class MmsReceiver : MmsReceivedReceiver() {
+
+    override fun isAddressBlocked(context: Context, address: String): Boolean {
+        val normalizedAddress = address.normalizePhoneNumber()
+        if (context.isNumberBlocked(normalizedAddress)) return true
+        if (context.baseConfig.blockUnknownNumbers) {
+            val privateCursor = context.getMyContactsCursor(
+                favoritesOnly = false,
+                withPhoneNumbersOnly = true
+            )
+            val isKnownContact = SimpleContactsHelper(context).existsSync(address, privateCursor)
+            return !isKnownContact
+        }
+
+        return false
+    }
+
+    override fun isContentBlocked(context: Context, content: String): Boolean {
+        return isMessageFilteredOut(context, content)
+    }
+
+    override fun onMessageReceived(context: Context, messageUri: Uri) {
+        val mms = context.getLatestMMS() ?: return
+        val address = mms.getSender()?.phoneNumbers?.first()?.normalizedNumber ?: ""
+        val size = context.resources.getDimension(R.dimen.notification_large_icon_size).toInt()
+        ensureBackgroundThread {
+            handleMmsMessage(context, mms, size, address)
+        }
+    }
+
+    override fun onError(context: Context, error: String) {
+        context.showErrorToast(context.getString(R.string.couldnt_download_mms))
+    }
+
+    private fun handleMmsMessage(
+        context: Context,
+        mms: Message,
+        size: Int,
+        address: String
+    ) {
+        val glideBitmap = try {
+            Glide.with(context)
+                .asBitmap()
+                .load(mms.attachment!!.attachments.first().getUri())
+                .centerCrop()
+                .into(size, size)
+                .get()
+        } catch (e: Exception) {
+            null
+        }
+
+        Handler(Looper.getMainLooper()).post {
+            context.showReceivedMessageNotification(
+                messageId = mms.id,
+                address = address,
+                body = mms.body,
+                threadId = mms.threadId,
+                bitmap = glideBitmap
+            )
+
+            ensureBackgroundThread {
+                val conversation = context.getConversations(mms.threadId).firstOrNull()
+                    ?: return@ensureBackgroundThread
+                context.insertOrUpdateConversation(conversation)
+                if (context.shouldUnarchive()) {
+                    context.updateConversationArchivedStatus(mms.threadId, false)
+                }
+                refreshMessages()
+                refreshConversations()
+            }
+        }
+    }
+}
